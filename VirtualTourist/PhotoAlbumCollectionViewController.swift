@@ -19,6 +19,13 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
     
     var photosToDownload = 0
     
+    var flickrPageNumber = 1
+    
+    var flickerMaxPages = 2
+    
+    var stack: CoreDataStack? = nil
+    var context: NSManagedObjectContext? = nil
+    
     //Set the title of the Tool Button accordingly.
     var selectedPhotos = [IndexPath]() {
         didSet {
@@ -54,9 +61,9 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
         fr.sortDescriptors = [NSSortDescriptor(key: "id", ascending: true)]
         fr.predicate = NSPredicate(format: "pin == %@", self.pin!)
         // Get the stack
-        let delegate = UIApplication.shared.delegate as! AppDelegate
-        let stack = delegate.stack
-        let fetchedResultsController = NSFetchedResultsController(fetchRequest: fr, managedObjectContext: stack.context, sectionNameKeyPath: nil, cacheName: nil)
+        //let delegate = UIApplication.shared.delegate as! AppDelegate
+        //let stack = self.stack!  //delegate.stack
+        let fetchedResultsController = NSFetchedResultsController(fetchRequest: fr, managedObjectContext: self.context!, sectionNameKeyPath: nil, cacheName: nil)
         return fetchedResultsController
     }()
 
@@ -65,6 +72,11 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
         
         collectionView.delegate = self
         collectionView.dataSource = self
+        
+        let delegate = UIApplication.shared.delegate as! AppDelegate
+        // Save the stack and context for convenience
+        stack = delegate.stack
+        context = stack!.context
         
         newCollectionButton.isEnabled = false
         deleteSelectedPhotosButton.isHidden = true
@@ -99,14 +111,13 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
     private func getPhotosFromFlickr() {
         
         if let pin = pin {
-            let delegate = UIApplication.shared.delegate as! AppDelegate
-            let stack = delegate.stack
             activityIndicator.startAnimating()
             noImagesLabel.isHidden = true
-            FlickrClient.sharedInstance().photosForLocation(pin, nil, context: stack.context) {(results, error) in
+            FlickrClient.sharedInstance().photosForLocation(pin, flickrPageNumber, context: context!) {(pages, results, error) in
                 if let _ = results {
                     performUIUpdatesOnMain {
-                        stack.save()
+                        self.stack!.save()
+                        self.flickerMaxPages = pages!
                         do {
                             try self.fetchedResultsController.performFetch()
                         } catch let error {
@@ -120,7 +131,6 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
                         }
                         self.collectionView.reloadData()
                         self.activityIndicator.stopAnimating()
-                        //self.newCollectionButton.isEnabled = true
                     }
                 } else {
                     performUIUpdatesOnMain {
@@ -169,29 +179,30 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
         newCollectionButton.isEnabled = false
         
         // Delete all of the photos for this pin location
-        let delegate = UIApplication.shared.delegate as! AppDelegate
-        let stack = delegate.stack
-        
         for photo in fetchedResultsController.fetchedObjects! {
-            stack.context.delete(photo)
+            context!.delete(photo)
         }
-        stack.save()
+        context!.perform {
+            self.stack!.save()
+        }
         
         // Get new photos
+        flickrPageNumber += 1
+        if flickrPageNumber > flickerMaxPages {
+            flickrPageNumber = 1
+        }
         getPhotosFromFlickr()
     }
     
     @IBAction func deleteSelectedPhotosPressed(_ sender: Any) {
         
         // Delete the selected photos for this pin location
-        let delegate = UIApplication.shared.delegate as! AppDelegate
-        let stack = delegate.stack
-        
         for indexPath in selectedPhotos {
             let photo = fetchedResultsController.object(at: indexPath)
-            stack.context.delete(photo)
+            context!.delete(photo)
         }
-        stack.save()
+        stack!.save()
+        // Reference: https://discussions.udacity.com/t/issue-with-removing-pictures-from-collection-view/244771
         //self.collectionView.deleteItems(at: selectedPhotos)
         do {
             try fetchedResultsController.performFetch()
@@ -239,7 +250,9 @@ class PhotoAlbumViewController: UIViewController, UICollectionViewDelegate, UICo
             cell.activityIndicator.startAnimating()
             FlickrClient.sharedInstance().getImageForPhoto(photo) { (data, error) in
                 if let data = data {
-                    photo.imageData = data
+                    self.context!.performAndWait {
+                        photo.imageData = data
+                    }
                     performUIUpdatesOnMain {
                         cell.imageView.image = UIImage(data: data)
                         cell.activityIndicator.stopAnimating()

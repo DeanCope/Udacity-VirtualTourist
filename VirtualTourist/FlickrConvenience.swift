@@ -14,7 +14,7 @@ extension FlickrClient {
     
     // MARK: GET Convenience Methods
     // Get a photos for a location (lat/lon)
-    func photosForLocation(_ pin: Pin, _ limit: Int?, context: NSManagedObjectContext, completionHandlerForPhotos: @escaping (_ result: [Photo]?, _ error: FlickrClientError?) -> Void) {
+    func photosForLocation(_ pin: Pin, _ page: Int = 1, context: NSManagedObjectContext, completionHandlerForPhotos: @escaping (_ pages: Int?, _ result: [Photo]?, _ error: FlickrClientError?) -> Void) {
         
         /* 1. Specify parameters */
         
@@ -27,26 +27,30 @@ extension FlickrClient {
         parameters[FlickrClient.ParameterKeys.Longitude] = pin.longitude as AnyObject
         parameters[FlickrClient.ParameterKeys.Extras] = FlickrClient.ParameterValues.Extras as AnyObject
         parameters[FlickrClient.ParameterKeys.PerPage] = "10" as AnyObject
+        parameters[FlickrClient.ParameterKeys.Page] = page as AnyObject
         
         /* 2. Make the request */
         let _ = taskForGETMethod(parameters: parameters) { (results, error) in
             
             /* 3. Send the desired value(s) to completion handler */
             guard (error == nil) else {
-                completionHandlerForPhotos(nil, error)
+                completionHandlerForPhotos(nil, nil, error)
                 return
             }
             
             guard
                 let jsonPhotos = results?[FlickrClient.JSONResponseKeys.Photos] as? [String:AnyObject],
+                let pages = jsonPhotos[FlickrClient.JSONResponseKeys.Pages] as? Int,
                 let photosArray = jsonPhotos[FlickrClient.JSONResponseKeys.Photo] as? [[String: AnyObject]] else {
-                    completionHandlerForPhotos(nil, .parseFailed(detail: FlickrClient.JSONResponseKeys.Photos))
+                    completionHandlerForPhotos(nil, nil, .parseFailed(detail: FlickrClient.JSONResponseKeys.Photos))
                     return
             }
-            
-            let photos = Photo.photosFromResults(photosArray, forPin: pin, context: context)
-           // print("Got \(photos.count) photos from Flickr")
-            completionHandlerForPhotos(photos, nil)
+            context.performAndWait {
+                let photos = Photo.photosFromResults(photosArray, forPin: pin, context: context)
+                // print("Got \(photos.count) photos from Flickr")
+                completionHandlerForPhotos(pages, photos, nil)
+            }
+
             
         }
     }

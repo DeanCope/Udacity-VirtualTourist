@@ -58,6 +58,7 @@ extension FlickrClient {
         static let Longitude = "lon"
         static let Extras = "extras"
         static let PerPage = "per_page"
+        static let Page = "page"
     }
     
     // MARK: Parameter Values
@@ -72,6 +73,7 @@ extension FlickrClient {
     // MARK: JSON Response Keys
     struct JSONResponseKeys {
         static let Status = "stat"
+        static let Pages = "pages"
         static let Photos = "photos"
         static let Photo = "photo"
         static let Id = "id"
